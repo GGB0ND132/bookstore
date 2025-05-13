@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import type { Book } from "../types/book";
 import { 
@@ -9,11 +9,20 @@ import {
   Button, 
   CardActions,
   Box,
-  Skeleton
+  Skeleton,
+  Snackbar,
+  Alert
 } from "@mui/material";
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import { useState } from "react";
+import { addToCart } from "../services/api";
 
 const Home = () => {
+  const queryClient = useQueryClient();
+  const [openSnackbar, setOpenSnackbar] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
+
   const { data: books, isLoading } = useQuery<Book[]>({
     queryKey: ['books'],
     queryFn: async () => {
@@ -21,6 +30,25 @@ const Home = () => {
       return res.json();
     }
   });
+
+  const addToCartMutation = useMutation({
+    mutationFn: (bookId: number) => addToCart(bookId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cart'] });
+      setSnackbarMessage('已成功加入购物车！');
+      setSnackbarSeverity('success');
+      setOpenSnackbar(true);
+    },
+    onError: () => {
+      setSnackbarMessage('加入购物车失败，请重试');
+      setSnackbarSeverity('error');
+      setOpenSnackbar(true);
+    }
+  });
+
+  const handleAddToCart = (bookId: number) => {
+    addToCartMutation.mutate(bookId);
+  };
 
   if (isLoading) {
     return (
@@ -89,14 +117,30 @@ const Home = () => {
                   size="small"
                   color="primary"
                   startIcon={<ShoppingCartIcon />}
+                  onClick={() => handleAddToCart(book.id)}
+                  disabled={addToCartMutation.isPending}
                 >
-                  加入购物车
+                  {addToCartMutation.isPending ? '添加中...' : '加入购物车'}
                 </Button>
               </CardActions>
             </Card>
           </Box>
         ))}
       </Box>
+      <Snackbar
+        open={openSnackbar}
+        autoHideDuration={3000}
+        onClose={() => setOpenSnackbar(false)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setOpenSnackbar(false)} 
+          severity={snackbarSeverity}
+          sx={{ width: '100%' }}
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

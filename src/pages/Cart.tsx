@@ -7,71 +7,46 @@ import {
   Button,
   CircularProgress,
   Alert,
-  Card,
-  CardContent,
-  CardMedia,
-  IconButton,
-  Snackbar
+  Snackbar,
+  Divider
 } from "@mui/material";
-import DeleteIcon from '@mui/icons-material/Delete';
-import { useNavigate } from "react-router-dom";
 import { useState } from "react";
-
-interface CartItem {
-  id: number;
-  bookId: number;
-  title: string;
-  author: string;
-  price: number;
-  quantity: number;
-}
+import { getCart, removeFromCart } from "../services/api";
+import type { Book } from "../types/book";
 
 const Cart = () => {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [openSnackbar, setOpenSnackbar] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
 
-  const { data: cartItems, isLoading, error } = useQuery<CartItem[]>({
+  // 获取购物车数据
+  const { data: cartItems = [], isLoading, error } = useQuery<Book[]>({
     queryKey: ['cart'],
-    queryFn: async () => {
-      try {
-        console.log('正在获取购物车数据...');
-        const res = await fetch('http://localhost:5000/cart');
-        console.log('购物车响应状态:', res.status);
-        
-        if (!res.ok) {
-          const errorText = await res.text();
-          console.error('获取购物车失败:', errorText);
-          throw new Error(`获取购物车失败: ${errorText}`);
-        }
-        
-        const data = await res.json();
-        console.log('购物车数据:', data);
-        return data;
-      } catch (error) {
-        console.error('获取购物车出错:', error);
-        throw error;
-      }
-    }
+    queryFn: getCart
   });
 
-  const removeFromCart = useMutation({
-    mutationFn: async (bookId: number) => {
-      const res = await fetch(`http://localhost:5000/cart/${bookId}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) {
-        throw new Error('删除失败');
-      }
-      return res.json();
-    },
+  // 从购物车移除商品
+  const removeFromCartMutation = useMutation({
+    mutationFn: (cartItemId: string) => removeFromCart(cartItemId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cart'] });
       setOpenSnackbar(true);
     },
+    onError: (error) => {
+      console.error('删除失败:', error);
+      setSnackbarMessage('删除失败，请重试');
+      setSnackbarSeverity('error');
+      setOpenSnackbar(true);
+    }
   });
 
-  const total = cartItems?.reduce((sum, item) => sum + item.price * item.quantity, 0) || 0;
+  // 安全地计算总价
+  const total = cartItems.reduce((sum, item: Book) => {
+    const price = typeof item.price === 'number' ? item.price : 0;
+    const quantity = typeof item.quantity === 'number' ? item.quantity : 1;
+    return sum + (price * quantity);
+  }, 0);
 
   if (isLoading) {
     return (
@@ -83,86 +58,56 @@ const Cart = () => {
 
   if (error) {
     return (
-      <Container>
-        <Alert severity="error" sx={{ mt: 4 }}>
-          获取购物车失败，请重试
-        </Alert>
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Typography color="error" variant="h6">
+          加载购物车数据失败，请刷新页面重试
+        </Typography>
       </Container>
     );
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Typography variant="h4" component="h1" gutterBottom>
+    <Container maxWidth="md" sx={{ py: 4 }}>
+      <Typography variant="h4" gutterBottom>
         购物车
       </Typography>
-
-      {cartItems?.length === 0 ? (
-        <Paper sx={{ p: 3, textAlign: 'center' }}>
-          <Typography variant="h6" color="text.secondary">
-            购物车是空的
-          </Typography>
-          <Button
-            variant="contained"
-            onClick={() => navigate('/')}
-            sx={{ mt: 2 }}
-          >
-            去购物
-          </Button>
-        </Paper>
-      ) : (
-        <>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {cartItems?.map((item) => (
-              <Card key={item.id} sx={{ display: 'flex', position: 'relative' }}>
-                <CardMedia
-                  component="img"
-                  sx={{ width: 140, height: 200, objectFit: 'cover' }}
-                  image={`https://picsum.photos/seed/${item.bookId}/800/1000`}
-                  alt={item.title}
-                />
-                <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <Box>
-                    <Typography variant="h5" component="div">
-                      {item.title}
-                    </Typography>
-                    <Typography variant="subtitle1" color="text.secondary">
-                      作者：{item.author}
-                    </Typography>
-                    <Typography variant="h6" color="primary" sx={{ mt: 1 }}>
-                      ￥{item.price.toFixed(2)} × {item.quantity}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-                    <IconButton 
-                      color="error" 
-                      onClick={() => removeFromCart.mutate(item.bookId)}
-                      disabled={removeFromCart.isPending}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </Box>
-                </CardContent>
-              </Card>
-            ))}
-          </Box>
-
-          <Paper sx={{ p: 3, mt: 3 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6">
-                总计：￥{total.toFixed(2)}
+      <Paper sx={{ p: 3 }}>
+        {cartItems.length === 0 ? (
+          <Typography color="text.secondary">购物车为空</Typography>
+        ) : (
+          cartItems.map((item: Book) => (
+            <Box key={item.id} sx={{ mb: 2 }}>
+              <Typography variant="subtitle1">{item.title || '未知商品'}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                作者：{item.author || '未知作者'}
+              </Typography>
+              <Typography variant="body2" color="primary">
+                ￥{(item.price || 0).toFixed(2)}
+                {item.quantity ? ` × ${item.quantity}` : ' × 1'}
               </Typography>
               <Button
-                variant="contained"
-                size="large"
-                onClick={() => navigate('/checkout')}
+                size="small"
+                color="error"
+                onClick={() => {
+                  // 使用购物车项的 id 而不是书籍的 id
+                  const cartItemId = cartItems.find(i => i.id === item.id)?.id;
+                  if (cartItemId) {
+                    removeFromCartMutation.mutate(cartItemId.toString());
+                  }
+                }}
+                sx={{ mt: 1 }}
               >
-                去结算
+                删除
               </Button>
+              <Divider sx={{ my: 1 }} />
             </Box>
-          </Paper>
-        </>
-      )}
+          ))
+        )}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}>
+          <Typography variant="h6">总计</Typography>
+          <Typography variant="h6" color="primary">￥{total.toFixed(2)}</Typography>
+        </Box>
+      </Paper>
 
       <Snackbar
         open={openSnackbar}
@@ -172,10 +117,10 @@ const Cart = () => {
       >
         <Alert 
           onClose={() => setOpenSnackbar(false)} 
-          severity="success" 
+          severity={snackbarSeverity} 
           sx={{ width: '100%' }}
         >
-          已从购物车中删除
+          {snackbarMessage}
         </Alert>
       </Snackbar>
     </Container>

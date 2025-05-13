@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
-import type { Book } from "../types/book";
 import {
   Box,
   Card,
@@ -16,6 +15,7 @@ import {
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useState } from "react";
+import { addToCart } from "../services/api";
 
 const BookDetail = () => {
   const { id } = useParams();
@@ -23,54 +23,32 @@ const BookDetail = () => {
   const queryClient = useQueryClient();
   const [openSnackbar, setOpenSnackbar] = useState(false);
 
-  const { data: book, isLoading } = useQuery<Book>({
+  // 获取书籍详情
+  const { data: book, isLoading } = useQuery({
     queryKey: ['book', id],
     queryFn: async () => {
-      const res = await fetch(`http://localhost:5000/books/${id}`);
-      return res.json();
-    }
+      const response = await fetch(`http://localhost:5000/books/${id}`);
+      if (!response.ok) {
+        throw new Error('获取书籍详情失败');
+      }
+      return response.json();
+    },
+    enabled: !!id
   });
 
-  const addToCart = useMutation({
-    mutationFn: async () => {
-      try {
-        console.log('正在添加商品到购物车，bookId:', id);
-        const res = await fetch('http://localhost:5000/cart', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ bookId: Number(id) }),
-        });
-        
-        console.log('添加购物车响应状态:', res.status);
-        const responseText = await res.text();
-        console.log('添加购物车响应内容:', responseText);
-        
-        if (!res.ok) {
-          throw new Error(`添加失败: ${responseText}`);
-        }
-        
-        return JSON.parse(responseText);
-      } catch (error) {
-        console.error('添加购物车出错:', error);
-        throw error;
-      }
-    },
+  // 添加到购物车
+  const addToCartMutation = useMutation({
+    mutationFn: (bookId: number) => addToCart(bookId),
     onSuccess: () => {
-      setOpenSnackbar(true);
-      console.log('成功添加到购物车');
       queryClient.invalidateQueries({ queryKey: ['cart'] });
-    },
-    onError: (error) => {
-      console.error('添加到购物车失败:', error);
       setOpenSnackbar(true);
     }
   });
 
   const handleAddToCart = () => {
-    console.log('点击添加购物车按钮');
-    addToCart.mutate();
+    if (book) {
+      addToCartMutation.mutate(book.id);
+    }
   };
 
   if (isLoading) {
@@ -108,7 +86,7 @@ const BookDetail = () => {
               <CardMedia
                 component="img"
                 height="500"
-                image={`https://picsum.photos/seed/${book.id}/800/1000`}
+                image={book.coverImage}
                 alt={book.title}
                 sx={{
                   objectFit: 'cover',
@@ -139,10 +117,10 @@ const BookDetail = () => {
                 size="large"
                 startIcon={<ShoppingCartIcon />}
                 onClick={handleAddToCart}
-                disabled={addToCart.isPending}
+                disabled={addToCartMutation.isPending}
                 sx={{ minWidth: 200 }}
               >
-                {addToCart.isPending ? '添加中...' : '加入购物车'}
+                {addToCartMutation.isPending ? '添加中...' : '加入购物车'}
               </Button>
             </Box>
           </Box>
@@ -157,10 +135,10 @@ const BookDetail = () => {
       >
         <Alert 
           onClose={() => setOpenSnackbar(false)} 
-          severity={addToCart.isError ? "error" : "success"} 
+          severity={addToCartMutation.isError ? "error" : "success"} 
           sx={{ width: '100%' }}
         >
-          {addToCart.isError ? '加入购物车失败，请重试' : '已成功加入购物车！'}
+          {addToCartMutation.isError ? '加入购物车失败，请重试' : '已成功加入购物车！'}
         </Alert>
       </Snackbar>
     </Container>
