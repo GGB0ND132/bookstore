@@ -69,7 +69,7 @@ npm install
 npm run dev
 
 # 启动模拟后端服务器
-npx json-server --watch db.json --port 3001
+npx json-server --watch db.json --port 5000
 
 # 构建生产版本
 npm run build
